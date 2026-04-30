@@ -68,7 +68,9 @@ Pinned dependencies, ruff and pytest configuration, virtualenv ignored, README s
 
 ### M1 — Toy world
 
-Output space `x ∈ {1, ..., K}^L` with defaults `K = 8`, `L = 4` (4096 outputs total). Ground-truth quality `q*(x)` is a fixed compositional function combining per-position token weights with a small pair-interaction term. The full table over all 4096 outputs is precomputed and used as an oracle in diagnostics — it is *not* visible to the judge.
+Output space: sequences of length `L = 4` over a vocabulary of `K = 8` planet symbols — ☿ ♀ ♁ ♂ ♃ ♄ ♅ ♆ (Mercury through Neptune) — giving 8⁴ = 4096 possible sequences. A sequence looks like `♃ ♂ ♆ ♁`.
+
+Ground-truth quality `q*(x)` is a fixed compositional function combining per-position token weights with a small pair-interaction term. The full table over all 4096 outputs is precomputed and used as an oracle in diagnostics — it is *not* visible to the judge.
 
 *Acceptance:* tests confirm `q*` is deterministic given a seed, covers all 4096 outputs, and has non-degenerate variance.
 
