@@ -1,4 +1,15 @@
-"""Categorical autoregressive policy: embedding -> GRU -> logits per step."""
+"""
+Categorical autoregressive policy network.
+
+This file exists to define how the policy generates token sequences. The policy
+is the agent under training: it starts with a roughly uniform distribution over
+the 4096 possible sequences and is gradually shaped by the judge's reward signal.
+Tracking how its distribution changes — and whether those changes reflect genuine
+quality improvement — is the central question of the experiment.
+
+Architecture: token embedding -> 1-layer GRU -> linear projection to vocab logits,
+one set of logits per position. Around 5K parameters total.
+"""
 
 import jax
 import jax.numpy as jnp
@@ -8,100 +19,142 @@ from coevolution.config import AgentConfig, WorldConfig
 
 
 class Policy(nn.Module):
+    """Autoregressive policy over fixed-length token sequences.
+
+    Generates sequences of length world.seq_len from a vocabulary of size
+    world.vocab_size. A learned start-of-sequence token (index vocab_size)
+    seeds the GRU at position 0.
+
+    Attributes:
+        cfg: Architecture hyperparameters (embed_dim, hidden_dim).
+        world: World configuration (vocab_size, seq_len).
+    """
+
     cfg: AgentConfig
     world: WorldConfig
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        """
-        Forward pass for training.
+        """Compute per-position logits for a batch of sequences.
+
+        Teacher-forces the input: at each position t the GRU receives the
+        embedding of x[t-1] (with a learned SOS token at t=0) and produces
+        logits for position t.
 
         Args:
-            x: integer tokens of shape (batch, seq_len). Token at position t is
-               the *input* to produce logits for position t+1; position 0 uses
-               a learned start embedding.
+            x: Integer token array of shape (batch, seq_len) with values in
+               [0, vocab_size).
 
         Returns:
-            logits of shape (batch, seq_len, vocab_size).
+            Float array of shape (batch, seq_len, vocab_size) containing
+            unnormalised log-probabilities for each position.
         """
         B, L = x.shape
         emb = nn.Embed(self.world.vocab_size + 1, self.cfg.embed_dim, name="embed")
 
-        # Start token index = vocab_size (one beyond normal tokens)
-        start = jnp.full((B, 1), self.world.vocab_size, dtype=jnp.int32)
-        inp = jnp.concatenate([start, x[:, :-1]], axis=1)  # (B, L)
+        # SOS index sits one beyond the normal vocabulary so it never collides
+        # with real tokens and has its own learned embedding.
+        sos = jnp.full((B, 1), self.world.vocab_size, dtype=jnp.int32)
+        inp = jnp.concatenate([sos, x[:, :-1]], axis=1)  # (B, L)
         embedded = emb(inp)  # (B, L, embed_dim)
 
         gru = nn.GRUCell(self.cfg.hidden_dim, name="gru")
+        proj = nn.Dense(self.world.vocab_size, name="proj")
         h = jnp.zeros((B, self.cfg.hidden_dim))
-        logit_proj = nn.Dense(self.world.vocab_size, name="proj")
 
-        all_logits = []
+        logits_per_step = []
         for t in range(L):
             h, _ = gru(h, embedded[:, t])
-            all_logits.append(logit_proj(h))
+            logits_per_step.append(proj(h))
 
-        return jnp.stack(all_logits, axis=1)  # (B, L, vocab_size)
+        return jnp.stack(logits_per_step, axis=1)  # (B, L, vocab_size)
 
-    def log_prob(self, params, x: jnp.ndarray) -> jnp.ndarray:
-        """Log probability of sequence x under the policy. Shape: (batch,)."""
+    def log_prob(self, params: dict, x: jnp.ndarray) -> jnp.ndarray:
+        """Compute the log probability of each sequence under the current policy.
+
+        Args:
+            params: Flax parameter dict returned by init.
+            x: Integer token array of shape (batch, seq_len).
+
+        Returns:
+            Float array of shape (batch,) containing sum log-probabilities.
+        """
         logits = self.apply(params, x)  # (B, L, V)
-        lp = jax.nn.log_softmax(logits, axis=-1)  # (B, L, V)
-        token_lp = lp[jnp.arange(x.shape[0])[:, None], jnp.arange(x.shape[1])[None, :], x]
-        return token_lp.sum(-1)
+        log_probs = jax.nn.log_softmax(logits, axis=-1)  # (B, L, V)
+        batch_idx = jnp.arange(x.shape[0])[:, None]
+        pos_idx = jnp.arange(x.shape[1])[None, :]
+        token_log_probs = log_probs[batch_idx, pos_idx, x]  # (B, L)
+        return token_log_probs.sum(-1)  # (B,)
 
-    def sample(self, params, rng: jax.Array, n: int) -> jnp.ndarray:
-        """Sample n sequences autoregressively. Shape: (n, seq_len)."""
+    def sample(self, params: dict, rng: jax.Array, n: int) -> jnp.ndarray:
+        """Sample n sequences autoregressively from the current policy.
+
+        At each step the token sampled at step t-1 is fed back as input for
+        step t (unlike __call__, which teacher-forces the gold sequence).
+
+        Args:
+            params: Flax parameter dict returned by init.
+            rng: JAX PRNG key; split internally across decoding steps.
+            n: Number of sequences to sample in parallel.
+
+        Returns:
+            Integer array of shape (n, seq_len) with values in [0, vocab_size).
+        """
         L = self.world.seq_len
-        gru = nn.GRUCell(self.cfg.hidden_dim, name="gru")
-        emb = nn.Embed(self.world.vocab_size + 1, self.cfg.embed_dim, name="embed")
-
-        def body(carry, t):
-            h, prev_tok, rng = carry
-            e = self.apply(params, prev_tok, method=lambda m, tok: m.embed_token(tok))
-            new_h, _ = self.apply(params, h, e, method=lambda m, h, e: m.gru_step(h, e))
-            logits = self.apply(params, new_h, method=lambda m, h: m.project(h))
-            rng, sub = jax.random.split(rng)
-            tok = jax.random.categorical(sub, logits)
-            return (new_h, tok, rng), tok
-
-        # Use a simpler manual loop via apply on the whole model
-        return self._sample_loop(params, rng, n)
-
-    def _sample_loop(self, params, rng: jax.Array, n: int) -> jnp.ndarray:
-        """Ancestral sampling loop, returns (n, seq_len) tokens."""
-        L = self.world.seq_len
-        V = self.world.vocab_size
         h = jnp.zeros((n, self.cfg.hidden_dim))
 
-        # Extract sub-modules via bound apply calls
-        def embed(tok):
-            return self.apply(params, tok, method=lambda m, t: m.embed_single(t))
+        sos = jnp.full((n,), self.world.vocab_size, dtype=jnp.int32)
+        current_token = sos
+        sampled_tokens = []
 
-        def step(h, e):
-            return self.apply(params, h, e, method=lambda m, h, e: m.gru_step_single(h, e))
-
-        def proj(h):
-            return self.apply(params, h, method=lambda m, h: m.proj_single(h))
-
-        start = jnp.full((n,), V, dtype=jnp.int32)
-        e = embed(start)
-        tokens = []
         for _ in range(L):
-            h, _ = step(h, e)
-            logits = proj(h)
-            rng, sub = jax.random.split(rng)
-            tok = jax.random.categorical(sub, logits)
-            tokens.append(tok)
-            e = embed(tok)
+            e = self.apply(params, current_token, method=lambda m, t: m._embed(t))
+            h, _ = self.apply(params, h, e, method=lambda m, h, e: m._gru_step(h, e))
+            logits = self.apply(params, h, method=lambda m, h: m._project(h))
+            rng, step_rng = jax.random.split(rng)
+            current_token = jax.random.categorical(step_rng, logits)
+            sampled_tokens.append(current_token)
 
-        return jnp.stack(tokens, axis=1)  # (n, L)
+        return jnp.stack(sampled_tokens, axis=1)  # (n, L)
 
-    def embed_single(self, tok: jnp.ndarray) -> jnp.ndarray:
+    # ------------------------------------------------------------------
+    # Sub-module helpers used by sample() to call individual layers
+    # through Flax's apply interface without re-running the full forward
+    # pass. Each helper reuses the same named layers as __call__ so the
+    # shared parameter dict is consistent.
+    # ------------------------------------------------------------------
+
+    def _embed(self, tok: jnp.ndarray) -> jnp.ndarray:
+        """Look up token embeddings.
+
+        Args:
+            tok: Integer array of shape (batch,).
+
+        Returns:
+            Float array of shape (batch, embed_dim).
+        """
         return nn.Embed(self.world.vocab_size + 1, self.cfg.embed_dim, name="embed")(tok)
 
-    def gru_step_single(self, h, e):
+    def _gru_step(self, h: jnp.ndarray, e: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Advance the GRU by one step.
+
+        Args:
+            h: Hidden state of shape (batch, hidden_dim).
+            e: Input embedding of shape (batch, embed_dim).
+
+        Returns:
+            Tuple of (new_hidden_state, new_hidden_state) matching Flax GRUCell
+            convention where both elements of the tuple are the new state.
+        """
         return nn.GRUCell(self.cfg.hidden_dim, name="gru")(h, e)
 
-    def proj_single(self, h):
+    def _project(self, h: jnp.ndarray) -> jnp.ndarray:
+        """Project hidden state to vocabulary logits.
+
+        Args:
+            h: Hidden state of shape (batch, hidden_dim).
+
+        Returns:
+            Float array of shape (batch, vocab_size).
+        """
         return nn.Dense(self.world.vocab_size, name="proj")(h)
