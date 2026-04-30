@@ -20,9 +20,9 @@ import jax.numpy as jnp
 
 from coevolution.config import WorldConfig
 
-# Human-readable labels for the 8 vocabulary tokens (Mercury through Neptune).
-# Index i maps to PLANET_SYMBOLS[i] for display; internal computations use ints.
-PLANET_SYMBOLS: list[str] = ["☿", "♀", "♁", "♂", "♃", "♄", "♅", "♆"]
+# Human-readable labels for the 8 vocabulary tokens (compass directions).
+# Index i maps to VOCAB_SYMBOLS[i] for display; internal computations use ints.
+VOCAB_SYMBOLS: list[str] = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"]
 
 
 def make_q_star(cfg: WorldConfig, rng: jax.Array) -> Callable[[jnp.ndarray], jnp.ndarray]:
@@ -108,9 +108,9 @@ def render_sequence(x: jnp.ndarray) -> str:
         x: 1-D integer array of length seq_len with values in [0, vocab_size).
 
     Returns:
-        A string of planet symbols, e.g. '♃ ♂ ♆ ♁'.
+        A string of compass symbols, e.g. '↑ ↗ ↓ ←'.
 
     Raises:
-        IndexError: If any token index exceeds len(PLANET_SYMBOLS) - 1.
+        IndexError: If any token index exceeds len(VOCAB_SYMBOLS) - 1.
     """
-    return " ".join(PLANET_SYMBOLS[int(t)] for t in x)
+    return " ".join(VOCAB_SYMBOLS[int(t)] for t in x)
