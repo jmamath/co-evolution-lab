@@ -1,0 +1,24 @@
+# Private planning docs
+Frontier 5 in Miniature - Implementation Plan.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Results (generated data — keep the directory, ignore contents)
+results/*
+!results/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Misc
+.DS_Store
+*.log
