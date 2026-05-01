@@ -43,7 +43,8 @@ def get_stats(all_data, metric):
     """Compute mean and std for a metric across runs."""
     if not all_data:
         return None
-    data_matrix = np.array([[row[metric] for row in run] for run in all_data])
+    min_len = min(len(run) for run in all_data)
+    data_matrix = np.array([[row[metric] for row in run[:min_len]] for run in all_data])
     return {
         "mean": data_matrix.mean(axis=0),
         "std": data_matrix.std(axis=0),
@@ -158,18 +159,22 @@ def plot_comparison(
             v_stats = get_stats(v_data, metric_key)
             if not v_stats:
                 continue
+            n = len(iters)
+            v_mean = v_stats["mean"][:n]
+            v_std = v_stats["std"][:n]
+            v_iters = iters[:len(v_mean)]
             ax.plot(
-                iters,
-                v_stats["mean"],
+                v_iters,
+                v_mean,
                 label=label,
                 color=colors[j + 1],
                 linewidth=1.5,
                 alpha=0.8,
             )
             ax.fill_between(
-                iters,
-                v_stats["mean"] - v_stats["std"],
-                v_stats["mean"] + v_stats["std"],
+                v_iters,
+                v_mean - v_std,
+                v_mean + v_std,
                 color=colors[j + 1],
                 alpha=0.05,
             )
