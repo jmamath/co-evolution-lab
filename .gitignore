@@ -10,6 +10,7 @@ build/
 .venv/
 venv/
 env/
+co-evolution-lab/
 
 # Results (generated data — keep the directory, ignore contents)
 results/*

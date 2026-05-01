@@ -11,9 +11,9 @@ Architecture: token embedding -> 1-layer GRU -> linear projection to vocab logit
 one set of logits per position. Around 5K parameters total.
 """
 
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
 
 from coevolution.config import AgentConfig, WorldConfig
 
@@ -133,9 +133,12 @@ class Policy(nn.Module):
         Returns:
             Float array of shape (batch, embed_dim).
         """
-        return nn.Embed(self.world.vocab_size + 1, self.cfg.embed_dim, name="embed")(tok)
+        embed = nn.Embed(self.world.vocab_size + 1, self.cfg.embed_dim, name="embed")
+        return embed(tok)
 
-    def _gru_step(self, h: jnp.ndarray, e: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def _gru_step(
+        self, h: jnp.ndarray, e: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Advance the GRU by one step.
 
         Args:

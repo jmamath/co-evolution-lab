@@ -16,7 +16,7 @@ class WorldConfig:
 
     Attributes:
         vocab_size: Number of distinct tokens (K). Determines the width of the
-            output alphabet. Default 8 maps to the 8 planet symbols.
+            output alphabet. Default 8 maps to the 8 compass symbols.
         seq_len: Length of each output sequence (L). Combined with vocab_size,
             the full output space has vocab_size ** seq_len entries.
         pair_alpha: Scale of the pair-interaction term in q*. Kept small so the

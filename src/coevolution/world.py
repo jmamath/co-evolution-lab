@@ -25,7 +25,9 @@ from coevolution.config import WorldConfig
 VOCAB_SYMBOLS: list[str] = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"]
 
 
-def make_q_star(cfg: WorldConfig, rng: jax.Array) -> Callable[[jnp.ndarray], jnp.ndarray]:
+def make_q_star(
+    cfg: WorldConfig, rng: jax.Array
+) -> Callable[[jnp.ndarray], jnp.ndarray]:
     """Build and return the ground-truth quality function for a given world config.
 
     The returned function is a closure over fixed random weights drawn from rng.
@@ -57,7 +59,9 @@ def make_q_star(cfg: WorldConfig, rng: jax.Array) -> Callable[[jnp.ndarray], jnp
     w_position: jnp.ndarray = jax.random.normal(rng_pos, (cfg.seq_len,))
     w_token: jnp.ndarray = jax.random.normal(rng_tok, (cfg.vocab_size,))
     # pair_alpha keeps interaction scores secondary to positional token scores
-    w_pair: jnp.ndarray = jax.random.normal(rng_pair, (cfg.seq_len, cfg.vocab_size)) * cfg.pair_alpha
+    w_pair: jnp.ndarray = (
+        jax.random.normal(rng_pair, (cfg.seq_len, cfg.vocab_size)) * cfg.pair_alpha
+    )
 
     def q_star(x: jnp.ndarray) -> jnp.ndarray:
         token_scores = w_token[x]
