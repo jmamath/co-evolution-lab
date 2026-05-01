@@ -37,7 +37,7 @@ from coevolution.config import TrainingConfig, WorldConfig
 from coevolution.diagnostics import compute_diagnostics
 from coevolution.judge import Judge
 from coevolution.policy import Policy
-from coevolution.utils import save_checkpoint, save_jsonl
+from coevolution.utils import save_jsonl
 from coevolution.world import all_outputs, q_star_table
 
 logger = logging.getLogger(__name__)
