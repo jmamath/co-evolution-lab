@@ -86,6 +86,34 @@ class Policy(nn.Module):
         token_log_probs = log_probs[batch_idx, pos_idx, x]  # (B, L)
         return token_log_probs.sum(-1)  # (B,)
 
+    def greedy_decode(self, params: dict) -> jnp.ndarray:
+        """Return the single highest-probability sequence under the current policy.
+
+        Used at analysis time to track the policy mode across iterations.
+        Takes argmax at every step rather than sampling, so no rng is needed.
+
+        Args:
+            params: Flax parameter dict returned by init.
+
+        Returns:
+            Integer array of shape (seq_len,) with values in [0, vocab_size).
+        """
+        L = self.world.seq_len
+        h = jnp.zeros((1, self.cfg.hidden_dim))
+
+        sos = jnp.full((1,), self.world.vocab_size, dtype=jnp.int32)
+        current_token = sos
+        tokens = []
+
+        for _ in range(L):
+            e = self.apply(params, current_token, method=lambda m, t: m._embed(t))
+            h, _ = self.apply(params, h, e, method=lambda m, h, e: m._gru_step(h, e))
+            logits = self.apply(params, h, method=lambda m, h: m._project(h))
+            current_token = jnp.argmax(logits, axis=-1)  # (1,)
+            tokens.append(current_token[0])
+
+        return jnp.stack(tokens)  # (seq_len,)
+
     def sample(self, params: dict, rng: jax.Array, n: int) -> jnp.ndarray:
         """Sample n sequences autoregressively from the current policy.
 
@@ -124,6 +152,7 @@ class Policy(nn.Module):
     # shared parameter dict is consistent.
     # ------------------------------------------------------------------
 
+    @nn.compact
     def _embed(self, tok: jnp.ndarray) -> jnp.ndarray:
         """Look up token embeddings.
 
@@ -136,6 +165,7 @@ class Policy(nn.Module):
         embed = nn.Embed(self.world.vocab_size + 1, self.cfg.embed_dim, name="embed")
         return embed(tok)
 
+    @nn.compact
     def _gru_step(
         self, h: jnp.ndarray, e: jnp.ndarray
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -151,6 +181,7 @@ class Policy(nn.Module):
         """
         return nn.GRUCell(self.cfg.hidden_dim, name="gru")(h, e)
 
+    @nn.compact
     def _project(self, h: jnp.ndarray) -> jnp.ndarray:
         """Project hidden state to vocabulary logits.
 
