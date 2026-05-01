@@ -7,11 +7,13 @@ the experiment. A single outer iteration runs: (1) sample from policy,
 score as reward, (4) judge is updated on policy-generated pairs with its own
 labels as supervision.
 
-Each of the four architectural variants is isolated in its own private helper:
+Each of the five architectural variants is isolated in its own private helper:
 
-- _compute_rewards   — Variant B: ensemble mean vs. single-judge score
-- _update_single_judge — Variant D: anchor pairs mixed into the judge update
-- _maybe_reset_judges  — Variant C: periodic judge reinitialization
+- _compute_rewards        — Variant B: ensemble mean vs. single-judge score
+- _update_single_judge    — Variant D: anchor pairs mixed into the judge update
+- _maybe_reset_judges     — Variant C: periodic judge reinitialization
+- _build_meta_holdout     — Variant E: construct the fixed held-out pair set
+- _maybe_meta_update_judges — Variant E: corrective step when accuracy drifts
 - Variant A (asymmetric update rate) is a single `continue` guard in the inner
   loop and does not benefit from extraction.
 
@@ -352,6 +354,77 @@ def _maybe_reset_judges(
     return judges_params, judges_opt_states
 
 
+def _build_meta_holdout(
+    outputs_tbl: jnp.ndarray,
+    q_star_tbl: jnp.ndarray,
+    cfg: TrainingConfig,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray] | None:
+    """Build the fixed held-out pair set for the meta-judge (Variant E).
+
+    Uses a deterministic key so the same pairs are used across all seeds and
+    variant runs, making held-out accuracy comparable across experiments.
+
+    Returns None when meta_holdout_fraction == 0.0.
+
+    Returns:
+        Tuple of (holdout_xa, holdout_xb, holdout_labels) where labels are
+        float32 indicators: 1.0 if q*(x_a) > q*(x_b), else 0.0.
+    """
+    if cfg.meta_holdout_fraction <= 0.0:
+        return None
+
+    n = max(1, int(len(outputs_tbl) * cfg.meta_holdout_fraction))
+    # Fixed key so the held-out set is identical across all seeds and variants.
+    key = jax.random.PRNGKey(0)
+    key_a, key_b = jax.random.split(key)
+    idx_a = jax.random.randint(key_a, (n,), 0, len(outputs_tbl))
+    idx_b = jax.random.randint(key_b, (n,), 0, len(outputs_tbl))
+    labels = (q_star_tbl[idx_a] > q_star_tbl[idx_b]).astype(jnp.float32)
+    return outputs_tbl[idx_a], outputs_tbl[idx_b], labels
+
+
+def _maybe_meta_update_judges(
+    judges_params: list[dict],
+    judges_opt_states: list[optax.OptState],
+    judge_step: _StepFn,
+    judge: Judge,
+    meta_holdout: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray] | None,
+    cfg: TrainingConfig,
+) -> tuple[list[dict], list[optax.OptState], float | None]:
+    """Run a corrective judge update when held-out accuracy drops (Variant E).
+
+    Computes pairwise accuracy on the fixed held-out set. If it falls below
+    cfg.meta_accuracy_threshold, runs one gradient step on the held-out pairs
+    using ground-truth q* labels. This is a no-op when meta_holdout is None.
+
+    Returns:
+        Tuple of (judges_params, judges_opt_states, accuracy). Accuracy is None
+        when the meta-judge is disabled.
+    """
+    if meta_holdout is None:
+        return judges_params, judges_opt_states, None
+
+    xa, xb, labels = meta_holdout
+    updated_params = []
+    updated_opt_states = []
+    accuracies = []
+
+    for j_params, j_opt in zip(judges_params, judges_opt_states):
+        score_a = judge.apply(j_params, xa)
+        score_b = judge.apply(j_params, xb)
+        accuracy = float(jnp.mean((score_a > score_b) == labels.astype(bool)))
+        accuracies.append(accuracy)
+
+        if accuracy < cfg.meta_accuracy_threshold:
+            j_params, j_opt, _ = judge_step(j_params, j_opt, xa, xb, labels)
+
+        updated_params.append(j_params)
+        updated_opt_states.append(j_opt)
+
+    mean_accuracy = float(np.mean(accuracies))
+    return updated_params, updated_opt_states, mean_accuracy
+
+
 # ---------------------------------------------------------------------------
 # High-level training functions
 # ---------------------------------------------------------------------------
@@ -500,6 +573,9 @@ def run_coevolution(
     # Immutable reference for periodic resets (Variant C)
     reset_judges_params: list[dict] = list(pretrained_judges_params)
 
+    # Variant E: build fixed held-out set once (None when disabled)
+    meta_holdout = _build_meta_holdout(outputs_tbl, q_star_tbl, cfg)
+
     # ---- optimisers ----
     policy_optimizer = optax.adam(cfg.lr_policy)
     judge_optimizer = optax.adam(cfg.lr_judge)
@@ -555,6 +631,11 @@ def run_coevolution(
             reset_judges_params, judge_optimizer, cfg,
         )
 
+        judges_params, judges_opt_states, meta_acc = _maybe_meta_update_judges(
+            judges_params, judges_opt_states,
+            judge_step, judge, meta_holdout, cfg,
+        )
+
         diag = compute_diagnostics(
             policy_params=policy_params,
             judges_params=judges_params,
@@ -565,6 +646,8 @@ def run_coevolution(
             iteration=t,
             seed=cfg.seed,
         )
+        if meta_acc is not None:
+            diag["meta_judge_accuracy"] = meta_acc
         history.append(diag)
         logger.info("Iteration %d: %s", t + 1, diag)
 

@@ -77,6 +77,14 @@ class TrainingConfig:
             outer iterations. 0 means never reset.
         anchor_fraction: Variant D — fraction of each judge-update batch drawn
             uniformly from the full output space and labelled with q* directly.
+        meta_holdout_fraction: Variant E — fraction of the full output space
+            reserved as a fixed held-out set of q*-labelled pairs. At the end
+            of each outer iteration the judge's pairwise accuracy on this set
+            is computed; if it falls below meta_accuracy_threshold a corrective
+            gradient step is run on the held-out pairs. 0.0 disables the
+            meta-judge entirely.
+        meta_accuracy_threshold: Variant E — accuracy floor that triggers the
+            corrective update. Ignored when meta_holdout_fraction == 0.0.
         run_name: Label used for result directories and log prefixes.
     """
 
@@ -92,4 +100,6 @@ class TrainingConfig:
     n_judges: int = 1
     reset_every: int = 0
     anchor_fraction: float = 0.0
+    meta_holdout_fraction: float = 0.0
+    meta_accuracy_threshold: float = 0.75
     run_name: str = "baseline"
