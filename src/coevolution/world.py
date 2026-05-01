@@ -51,7 +51,7 @@ def make_q_star(
         to scalar quality scores of shape (...,).
 
     Raises:
-        ValueError: If cfg.vocab_size != len(PLANET_SYMBOLS) when the default
+        ValueError: If cfg.vocab_size != len(VOCAB_SYMBOLS) when the default
             symbol table is in use (caught at call time by callers that render
             sequences).
     """
@@ -106,7 +106,7 @@ def q_star_table(cfg: WorldConfig, rng: jax.Array) -> jnp.ndarray:
 
 
 def render_sequence(x: jnp.ndarray) -> str:
-    """Convert an integer token sequence to its planet-symbol representation.
+    """Convert an integer token sequence to its compass-symbol representation.
 
     Args:
         x: 1-D integer array of length seq_len with values in [0, vocab_size).
