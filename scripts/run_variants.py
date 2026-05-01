@@ -1,22 +1,33 @@
 """
 Architectural variant experiments.
 
-This script exists to test the four stabilisation mechanisms proposed in
+This script exists to test the five stabilisation mechanisms proposed in
 Frontier 5 of the blog series: asymmetric update rates, judge ensembles,
-periodic reinitialization, and an external validation anchor. Each variant
-changes a single config flag against the baseline; all other settings are
-held constant so the effect is attributable to that mechanism alone.
+periodic reinitialization, an external validation anchor, and a meta-judge.
+Each variant changes a single config flag against the baseline; all other
+settings are held constant so the effect is attributable to that mechanism alone.
 
-Run:
+Run all variants:
     python scripts/run_variants.py
 
-Output:
-    results/variants/  — one subdirectory per variant, each containing
-    per-seed JSONL files and a summary CSV.
+Run a specific variant:
+    python scripts/run_variants.py --variants meta
 
-Expected wall time on M1: 2-3 hours total; runs are parallelisable across cores.
+Run multiple variants:
+    python scripts/run_variants.py --variants anchor meta
+
+Run specific seeds only:
+    python scripts/run_variants.py --variants meta --seeds 0 1 2
+
+Output:
+    results/variants/  — one subdirectory per variant setting, each containing
+    per-seed JSONL files.
+
+Expected wall time on M1: 2-3 hours for the full grid; individual variants
+take ~20-30 minutes across 5 seeds.
 """
 
+import argparse
 import concurrent.futures
 import logging
 import pathlib
@@ -54,6 +65,8 @@ def run_single_experiment(variant_id: str, value: float, seed: int):
         cfg_kwargs["reset_every"] = int(value)
     elif variant_id == "anchor":
         cfg_kwargs["anchor_fraction"] = float(value)
+    elif variant_id == "meta":
+        cfg_kwargs["meta_holdout_fraction"] = float(value)
 
     cfg = TrainingConfig(**cfg_kwargs)
 
@@ -96,30 +109,60 @@ def run_single_experiment(variant_id: str, value: float, seed: int):
     logger.info("Completed experiment: %s=%s, seed=%d", variant_id, value, seed)
 
 
+VARIANT_GRID = [
+    ("asymmetric", 2),
+    ("asymmetric", 5),
+    ("asymmetric", 10),
+    ("ensemble", 3),
+    ("ensemble", 5),
+    ("reinit", 3),
+    ("reinit", 5),
+    ("anchor", 0.05),
+    ("anchor", 0.1),
+    ("meta", 0.05),
+    ("meta", 0.1),
+]
+
+ALL_SEEDS = [0, 1, 2, 3, 4]
+
+
 def main():
-    # Experimental grid
-    variants = [
-        ("asymmetric", 2),
-        ("asymmetric", 5),
-        ("asymmetric", 10),
-        ("ensemble", 3),
-        ("ensemble", 5),
-        ("reinit", 3),
-        ("reinit", 5),
-        ("anchor", 0.05),
-        ("anchor", 0.1),
-    ]
-    seeds = [0, 1, 2, 3, 4]
+    parser = argparse.ArgumentParser(description="Run architectural variant experiments.")
+    parser.add_argument(
+        "--variants",
+        nargs="+",
+        metavar="VARIANT",
+        help="Variant IDs to run (e.g. meta anchor). Runs all if omitted.",
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        metavar="SEED",
+        default=ALL_SEEDS,
+        help="Seeds to run (e.g. 0 1 2). Runs all five if omitted.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Number of parallel workers (default: 4).",
+    )
+    args = parser.parse_args()
 
-    tasks = []
-    for var_id, val in variants:
-        for seed in seeds:
-            tasks.append((var_id, val, seed))
+    grid = VARIANT_GRID
+    if args.variants:
+        unknown = set(args.variants) - {v for v, _ in grid}
+        if unknown:
+            parser.error(f"Unknown variant(s): {', '.join(sorted(unknown))}. "
+                         f"Choose from: {', '.join(sorted({v for v, _ in grid}))}")
+        grid = [(v, val) for v, val in grid if v in args.variants]
 
+    tasks = [(var_id, val, seed) for var_id, val in grid for seed in args.seeds]
     logger.info("Starting variant sweep with %d runs...", len(tasks))
 
-    # Parallelize across 4 workers to stay safe with memory/CPU on M1
-    with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = [executor.submit(run_single_experiment, *t) for t in tasks]
         for future in concurrent.futures.as_completed(futures):
             try:
