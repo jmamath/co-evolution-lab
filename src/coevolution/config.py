@@ -78,13 +78,19 @@ class TrainingConfig:
         anchor_fraction: Variant D — fraction of each judge-update batch drawn
             uniformly from the full output space and labelled with q* directly.
         meta_holdout_fraction: Variant E — fraction of the full output space
-            reserved as a fixed held-out set of q*-labelled pairs. At the end
-            of each outer iteration the judge's pairwise accuracy on this set
-            is computed; if it falls below meta_accuracy_threshold a corrective
-            gradient step is run on the held-out pairs. 0.0 disables the
-            meta-judge entirely.
+            reserved as a fixed held-out set of q*-labelled pairs. 0.0
+            disables the meta-judge entirely.
         meta_accuracy_threshold: Variant E — accuracy floor that triggers the
             corrective update. Ignored when meta_holdout_fraction == 0.0.
+        meta_update_every: Variant E — how often (in inner steps) to evaluate
+            held-out accuracy and potentially run a corrective update. Controls
+            the frequency axis: meta_update_every=1 corrects after every
+            self-label step; meta_update_every=steps_per_iter fires once per
+            outer iteration (the coarsest option). 0 disables meta entirely
+            regardless of meta_holdout_fraction.
+        freeze_judge: Variant F — never update the judge after pretraining.
+            Isolates the effect of co-evolution by holding the reward model
+            fixed at its pretrained state throughout training.
         run_name: Label used for result directories and log prefixes.
     """
 
@@ -102,4 +108,6 @@ class TrainingConfig:
     anchor_fraction: float = 0.0
     meta_holdout_fraction: float = 0.0
     meta_accuracy_threshold: float = 0.75
+    meta_update_every: int = 0
+    freeze_judge: bool = False
     run_name: str = "baseline"

@@ -593,6 +593,8 @@ def run_coevolution(
     for t in range(cfg.n_iterations):
         logger.info("Iteration %d / %d", t + 1, cfg.n_iterations)
 
+        last_meta_acc: float | None = None
+
         for inner in range(cfg.steps_per_iter):
             rng, rng_sample = jax.random.split(rng)
             samples = policy.sample(policy_params, rng_sample, cfg.batch_size)
@@ -602,38 +604,40 @@ def run_coevolution(
                 policy_params, policy_opt_state, samples, rewards
             )
 
-            # Variant A: update judge only every judge_update_every policy steps
-            if (inner + 1) % cfg.judge_update_every != 0:
-                continue
+            # Variant A + F: self-label judge update (skipped when frozen)
+            if not cfg.freeze_judge and (inner + 1) % cfg.judge_update_every == 0:
+                rng, rng_a, rng_b = jax.random.split(rng, 3)
+                x_a = policy.sample(policy_params, rng_a, cfg.batch_size)
+                x_b = policy.sample(policy_params, rng_b, cfg.batch_size)
 
-            rng, rng_a, rng_b = jax.random.split(rng, 3)
-            x_a = policy.sample(policy_params, rng_a, cfg.batch_size)
-            x_b = policy.sample(policy_params, rng_b, cfg.batch_size)
+                for j_idx in range(cfg.n_judges):
+                    judges_params[j_idx], judges_opt_states[j_idx], rng = (
+                        _update_single_judge(
+                            judges_params[j_idx],
+                            judges_opt_states[j_idx],
+                            judge_step,
+                            judge,
+                            x_a,
+                            x_b,
+                            outputs_tbl,
+                            q_star_tbl,
+                            cfg,
+                            rng,
+                        )
+                    )
 
-            for j_idx in range(cfg.n_judges):
-                judges_params[j_idx], judges_opt_states[j_idx], rng = (
-                    _update_single_judge(
-                        judges_params[j_idx],
-                        judges_opt_states[j_idx],
-                        judge_step,
-                        judge,
-                        x_a,
-                        x_b,
-                        outputs_tbl,
-                        q_star_tbl,
-                        cfg,
-                        rng,
+            # Variant E: meta corrective update — independent frequency axis
+            if cfg.meta_update_every > 0 and (inner + 1) % cfg.meta_update_every == 0:
+                judges_params, judges_opt_states, last_meta_acc = (
+                    _maybe_meta_update_judges(
+                        judges_params, judges_opt_states,
+                        judge_step, judge, meta_holdout, cfg,
                     )
                 )
 
         judges_params, judges_opt_states = _maybe_reset_judges(
             t, judges_params, judges_opt_states,
             reset_judges_params, judge_optimizer, cfg,
-        )
-
-        judges_params, judges_opt_states, meta_acc = _maybe_meta_update_judges(
-            judges_params, judges_opt_states,
-            judge_step, judge, meta_holdout, cfg,
         )
 
         diag = compute_diagnostics(
@@ -646,8 +650,8 @@ def run_coevolution(
             iteration=t,
             seed=cfg.seed,
         )
-        if meta_acc is not None:
-            diag["meta_judge_accuracy"] = meta_acc
+        if last_meta_acc is not None:
+            diag["meta_judge_accuracy"] = last_meta_acc
         history.append(diag)
         logger.info("Iteration %d: %s", t + 1, diag)
 

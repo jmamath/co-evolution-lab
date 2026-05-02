@@ -66,7 +66,14 @@ def run_single_experiment(variant_id: str, value: float, seed: int):
     elif variant_id == "anchor":
         cfg_kwargs["anchor_fraction"] = float(value)
     elif variant_id == "meta":
-        cfg_kwargs["meta_holdout_fraction"] = float(value)
+        cfg_kwargs["meta_holdout_fraction"] = 0.05
+        cfg_kwargs["meta_update_every"] = int(value)
+    elif variant_id == "asym_meta":
+        cfg_kwargs["judge_update_every"] = int(value)
+        cfg_kwargs["meta_holdout_fraction"] = 0.05
+        cfg_kwargs["meta_update_every"] = int(value)
+    elif variant_id == "frozen":
+        cfg_kwargs["freeze_judge"] = True
 
     cfg = TrainingConfig(**cfg_kwargs)
 
@@ -119,8 +126,13 @@ VARIANT_GRID = [
     ("reinit", 5),
     ("anchor", 0.05),
     ("anchor", 0.1),
-    ("meta", 0.05),
-    ("meta", 0.1),
+    ("meta", 200),
+    ("meta", 10),
+    ("meta", 1),
+    ("asym_meta", 1),
+    ("asym_meta", 10),
+    ("asym_meta", 200),
+    ("frozen", 1),
 ]
 
 ALL_SEEDS = [0, 1, 2, 3, 4]

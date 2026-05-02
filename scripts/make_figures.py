@@ -214,12 +214,12 @@ def main():
         for d in variants_root.iterdir():
             if not d.is_dir():
                 continue
-            # name format: variantId_value
-            parts = d.name.split("_")
-            if len(parts) < 2:
+            # name format: variantId_value (variantId may itself contain underscores)
+            last_sep = d.name.rfind("_")
+            if last_sep == -1:
                 continue
-            v_id = parts[0]
-            v_val = parts[1]
+            v_id = d.name[:last_sep]
+            v_val = d.name[last_sep + 1:]
             if v_id not in variant_groups:
                 variant_groups[v_id] = []
             variant_groups[v_id].append((f"{v_id}={v_val}", d))
