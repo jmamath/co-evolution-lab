@@ -189,6 +189,85 @@ def plot_comparison(
     plt.close()
 
 
+def plot_best_mitigations(
+    baseline_dir: pathlib.Path,
+    variants_root: pathlib.Path,
+    out_path: pathlib.Path,
+):
+    """2×2 figure comparing the best configuration of each practical mitigation,
+    framed between a lower bound (frozen judge) and an upper bound (oracle anchor).
+
+    Panels: policy_quality, judge_alignment, policy_entropy, judge_perceived_quality.
+    One mean line per condition, no std bands, to keep the comparison readable.
+    Bounds are drawn as dotted grey lines to distinguish them from mitigations.
+    """
+    # Practical mitigations — solid coloured lines
+    mitigations = [
+        ("Baseline",        baseline_dir),
+        ("Asymmetric N=10", variants_root / "asymmetric_10"),
+        ("Ensemble N=5",    variants_root / "ensemble_5"),
+        ("Reinit R=5",      variants_root / "reinit_5"),
+        ("Asym+Meta N=10",  variants_root / "asym_meta_10"),
+    ]
+    # Boundary conditions — dotted grey lines
+    bounds = [
+        ("Lower bound (frozen judge)", variants_root / "frozen_1",  "black",  ":"),
+        ("Upper bound (oracle anchor)", variants_root / "anchor_0.1", "grey", ":"),
+    ]
+
+    panels = [
+        (0, 0, "policy_quality",          r"Policy Quality $\mathbb{E}[q^*(x)]$"),
+        (0, 1, "judge_alignment",         "Judge Alignment (Spearman)"),
+        (1, 0, "policy_entropy",          r"Policy Entropy $\mathcal{H}(\pi)$"),
+        (1, 1, "judge_perceived_quality", r"Judge-Perceived Quality $\mathbb{E}[J(x)]$"),
+    ]
+
+    colors = plt.cm.tab10(np.linspace(0, 0.9, len(mitigations)))
+
+    fig, axs = plt.subplots(2, 2, figsize=(11, 8), sharex=True)
+    fig.suptitle("Best Mitigation Strategies: Lower and Upper Bounds", fontsize=15)
+
+    for row, col, metric, title in panels:
+        ax = axs[row, col]
+
+        # Draw bounds first so they sit behind the mitigation lines
+        for label, runs_dir, color, ls in bounds:
+            data = load_run_data(runs_dir)
+            stats = get_stats(data, metric)
+            if stats is None:
+                continue
+            iters = np.arange(len(stats["mean"]))
+            ax.plot(iters, stats["mean"], label=label, color=color,
+                    linewidth=1.5, linestyle=ls, alpha=0.7)
+
+        # Draw mitigations on top
+        for (label, runs_dir), color in zip(mitigations, colors):
+            data = load_run_data(runs_dir)
+            stats = get_stats(data, metric)
+            if stats is None:
+                continue
+            iters = np.arange(len(stats["mean"]))
+            lw = 2.5 if label == "Baseline" else 1.8
+            ls = "--" if label == "Baseline" else "-"
+            ax.plot(iters, stats["mean"], label=label, color=color,
+                    linewidth=lw, linestyle=ls)
+
+        ax.set_title(title, fontsize=11)
+        ax.grid(True, linestyle="--", alpha=0.5)
+        if row == 1:
+            ax.set_xlabel("Iteration")
+
+    # Shared legend: bounds first, then mitigations
+    handles, labels = axs[0, 0].get_legend_handles_labels()
+    ncol = len(mitigations) + len(bounds)
+    fig.legend(handles, labels, loc="lower center", ncol=ncol,
+               fontsize=8.5, frameon=True, bbox_to_anchor=(0.5, -0.02))
+
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=str, help="Baseline runs directory.")
@@ -205,6 +284,15 @@ def main():
         baseline_dir = pathlib.Path(args.runs)
         plot_headline(baseline_dir, baseline_dir / "headline_2x2.png")
         logger.info("Headline plot saved to %s", baseline_dir / "headline_2x2.png")
+
+    if args.runs and args.variants:
+        out = pathlib.Path(args.variants) / "best_mitigations_2x2.png"
+        plot_best_mitigations(
+            pathlib.Path(args.runs),
+            pathlib.Path(args.variants),
+            out,
+        )
+        logger.info("Best mitigations plot saved to %s", out)
 
     if args.variants and args.runs:
         variants_root = pathlib.Path(args.variants)
