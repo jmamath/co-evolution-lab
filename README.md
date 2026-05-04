@@ -4,6 +4,8 @@
 
 This repository is the empirical companion to my four-part research series [*From Human Feedback to Synthetic Alignment*](https://jmamath.github.io/blog/synthetic-alignment-overview/). The series identified five open frontiers; this project brings [Frontier 5](https://jmamath.github.io/blog/synthetic-alignment-future/) — judge-policy co-evolution dynamics — into a regime small enough to measure precisely.
 
+**Blog post:** [A Tiny, Exact Lab for Judge-Policy Self-Play](https://jmamath.github.io/blog/co-evolution-lab/)
+
 ## The setup, in plain terms
 
 Think of the policy as a dancer and the judge as a choreographic critic. There is an ideal choreography — a fixed, objective score for every possible sequence of moves — that the critic cannot read directly. The critic starts with a reasonable sense of it (Spearman correlation ~0.7 with ground truth) and gives the dancer feedback. The dancer improves.
