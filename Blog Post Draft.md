@@ -36,7 +36,7 @@ The point of the toy is full enumerability: exact expected policy quality under 
 
 Four metrics per outer iteration separate external reality from the system's internal self-evaluation: `policy_quality` (expected ground-truth quality under the current policy), `judge_alignment` (Spearman correlation between judge scores and `q*`), `policy_entropy` (how broad or collapsed the policy distribution is), and `judge_perceived_quality` (the expected score the judge assigns to policy outputs).
 
-![Baseline headline 2x2](results/baseline_seeds_0-4/headline_2x2.png)
+![Baseline headline 2x2](figures/headline_2x2.png)
 
 *Baseline self-play across 5 seeds. Real quality (top-left) rises once, then largely stops. Judge alignment with ground truth (top-right) falls, policy entropy (bottom-left) collapses, and judge-perceived quality (bottom-right) keeps rising.*
 
@@ -74,7 +74,7 @@ The comparison is easiest to read if it is framed between two boundary condition
 - a frozen judge, which never co-evolves after pretraining
 - an oracle grounding condition, which continuously corrects the judge toward `q*`
 
-![Best mitigation strategies vs baseline](results/variants/best_mitigations_2x2.png)
+![Best mitigation strategies vs baseline](figures/best_mitigations_2x2.png)
 
 *Boundary conditions plus the strongest practical mitigations. The useful comparison is not "which line is highest?" but "which mechanisms preserve alignment and keep search alive long enough for real quality to improve?"*
 

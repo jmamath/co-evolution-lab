@@ -30,7 +30,7 @@ Sequences are length-4 strings over 8 compass direction tokens: ↑ ↗ → ↘ 
 
 ## The headline figure
 
-![Baseline headline 2×2](results/baseline_seeds_0-4/headline_2x2.png)
+![Baseline headline 2×2](figures/headline_2x2.png)
 
 Mean ± std across 5 seeds, 10 co-evolution iterations. The punchline is the contrast between bottom-right (what the training loop sees: judge-perceived quality climbing) and top-left (what is actually happening: real quality stalled after iteration 1).
 
