@@ -30,14 +30,9 @@ Sequences are length-4 strings over 8 compass direction tokens: ↑ ↗ → ↘ 
 
 ## The headline figure
 
-A 2×2 plot over 10 co-evolution iterations, mean ± std across 5 seeds:
+![Baseline headline 2×2](results/baseline_seeds_0-4/headline_2x2.png)
 
-| | |
-|---|---|
-| **Policy quality** `E[q*]` — rises, peaks ~iter 3–4, then plateaus | **Judge alignment** `Spearman(J, q*)` — starts at 0.7, drifts down |
-| **Policy entropy** `H(π)` — collapses monotonically | **Judge-perceived quality** `E[J]` — climbs throughout, looks like progress |
-
-The punchline is the contrast between bottom-right (what the training loop sees) and top-left (what is actually happening).
+Mean ± std across 5 seeds, 10 co-evolution iterations. The punchline is the contrast between bottom-right (what the training loop sees: judge-perceived quality climbing) and top-left (what is actually happening: real quality stalled after iteration 1).
 
 ## Reproduce the headline result
 
